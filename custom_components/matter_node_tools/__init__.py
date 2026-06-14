@@ -292,7 +292,7 @@ async def _register_panel(hass: HomeAssistant) -> None:
         frontend_url_path="matter_node_tools",
         sidebar_title="Matter Nodes",
         sidebar_icon="mdi:chip",
-        module_url="/matter_node_tools_static/matter-panel.js",
+        js_url="/matter_node_tools_static/matter-panel.js",
         embed_iframe=False,
         require_admin=False,
     )
