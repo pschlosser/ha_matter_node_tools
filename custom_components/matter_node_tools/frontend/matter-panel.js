@@ -135,6 +135,63 @@ const ATTR_NAMES = {
   "0x0080/0x0007": "SensorFault",
 };
 
+const DEVICE_TYPE_NAMES = {
+  0x0010: "Root Node",
+  0x0011: "Power Source Node",
+  0x0012: "OTA Requestor Node",
+  0x0013: "OTA Provider Node",
+  0x0014: "Aggregator",
+  0x0015: "Generic Switch",
+  0x0016: "On/Off Light Switch",
+  0x0022: "Pump",
+  0x0023: "Pump Controller",
+  0x0024: "Pressure Sensor",
+  0x0025: "Flow Sensor",
+  0x0026: "Bulk Water Sensor",
+  0x0027: "Rain Sensor",
+  0x0028: "Water Freeze Detector",
+  0x0029: "Water Leak Detector",
+  0x002A: "Water Valve",
+  0x0043: "On/Off Light",
+  0x0044: "Dimmable Light",
+  0x0045: "Color Temperature Light",
+  0x0046: "Extended Color Light",
+  0x0051: "On/Off Plug-in Unit",
+  0x0052: "Dimmable Plug-in Unit",
+  0x0053: "Color Temperature Plug-in Unit",
+  0x0054: "Extended Color Plug-in Unit",
+  0x0070: "Heating/Cooling Unit",
+  0x0072: "Thermostat",
+  0x0076: "Fan",
+  0x0100: "Door Lock",
+  0x0101: "Door Lock Controller",
+  0x0202: "Window Covering",
+  0x0203: "Window Covering Controller",
+  0x0300: "Heating/Cooling Unit",
+  0x0301: "Temperature Sensor",
+  0x0302: "Pressure Sensor",
+  0x0303: "Flow Sensor",
+  0x0304: "Humidity Sensor",
+  0x0305: "Light Sensor",
+  0x0306: "Occupancy Sensor",
+  0x0307: "Contact Sensor",
+  0x0840: "Bridge Device",
+  0x0850: "Generic Switch",
+  0x8000: "Matter Bridge",
+};
+
+const POWER_STATUS = {0: "Unspecified", 1: "Active (Wired)", 2: "Active (Battery)", 3: "Active (Solar)"};
+const BATTERY_CHARGE_LEVEL = {0: "✅ OK", 1: "⚠️ Warning", 2: "🔴 Critical"};
+const BOOT_REASON = {0: "Unspecified", 1: "Power On", 2: "Brown-out", 3: "SW Watchdog Reset", 4: "HW Watchdog Reset", 5: "SW Update", 6: "Software Reset"};
+
+function formatUptime(seconds) {
+  if (!seconds) return "unknown";
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return [d && `${d}d`, h && `${h}h`, `${m}m`].filter(Boolean).join(" ");
+}
+
 function clusterName(clusterId) {
   return CLUSTER_NAMES[clusterId] || `Cluster 0x${clusterId.toString(16).toUpperCase().padStart(4, "0")}`;
 }
@@ -584,6 +641,18 @@ const STYLES = `
     font-size: 13px;
   }
 
+  /* ── Endpoint 0 Info Cards ── */
+  .ep0-cards { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
+  .info-card { background: var(--card-background-color, #fff); border-radius: 8px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  .info-card-title { font-size: 0.8em; font-weight: 600; color: var(--secondary-text-color); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  .info-row { display: flex; gap: 8px; padding: 3px 0; font-size: 0.9em; border-bottom: 1px solid var(--divider-color, #e0e0e0); }
+  .info-row:last-child { border-bottom: none; }
+  .info-label { color: var(--secondary-text-color); width: 160px; flex-shrink: 0; }
+  .info-value { color: var(--primary-text-color); word-break: break-all; }
+  .device-type-badge { display: inline-block; background: var(--primary-color, #03a9f4); color: #fff; border-radius: 12px; padding: 2px 10px; font-size: 0.8em; margin: 2px; }
+  .network-item { font-size: 0.9em; padding: 3px 0; }
+  .uptime { font-variant-numeric: tabular-nums; }
+
   /* ── Global loading / empty states ── */
   .global-loading {
     display: flex;
@@ -908,6 +977,213 @@ class MatterPanel extends HTMLElement {
     this._renderEpContent(node, activeEp, eps[activeEp] || {}, activeEp === 0);
   }
 
+  // ── Render Endpoint 0 info cards ──
+
+  _renderEp0InfoCards(nodeId, ep0Clusters) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "ep0-cards";
+
+    // Card A: Device Information (BasicInformation cluster 0x0028)
+    const basicAttrs = ep0Clusters[0x0028];
+    if (basicAttrs) {
+      const rows = [];
+      const vendor = basicAttrs[0x0001];
+      if (vendor != null) rows.push({ label: "Vendor", value: safeStr(vendor) });
+      const product = basicAttrs[0x0003];
+      if (product != null) rows.push({ label: "Product", value: safeStr(product) });
+      const nodeLabel = basicAttrs[0x0005];
+      if (nodeLabel != null && String(nodeLabel).trim() !== "") rows.push({ label: "Node Label", value: safeStr(nodeLabel) });
+      const hw = basicAttrs[0x0008];
+      if (hw != null) rows.push({ label: "Hardware", value: safeStr(hw) });
+      const sw = basicAttrs[0x000A];
+      if (sw != null) rows.push({ label: "Software", value: safeStr(sw) });
+
+      if (rows.length > 0) {
+        const card = document.createElement("div");
+        card.className = "info-card";
+        card.innerHTML = `<div class="info-card-title">Device Information</div>`;
+        for (const r of rows) {
+          const row = document.createElement("div");
+          row.className = "info-row";
+          row.innerHTML = `<span class="info-label">${this._esc(r.label)}</span><span class="info-value">${this._esc(r.value)}</span>`;
+          card.appendChild(row);
+        }
+        wrapper.appendChild(card);
+      }
+    }
+
+    // Card B: Device Types (Descriptor cluster 0x001D, attr 0x0000)
+    const descriptorAttrs = ep0Clusters[0x001D];
+    if (descriptorAttrs && descriptorAttrs[0x0000] != null) {
+      const raw = descriptorAttrs[0x0000];
+      let deviceTypes = null;
+      try {
+        if (Array.isArray(raw)) {
+          deviceTypes = raw;
+        } else if (typeof raw === "string") {
+          deviceTypes = JSON.parse(raw);
+        }
+      } catch (e) {
+        deviceTypes = null;
+      }
+
+      const card = document.createElement("div");
+      card.className = "info-card";
+      card.innerHTML = `<div class="info-card-title">Device Types</div>`;
+      const badgesDiv = document.createElement("div");
+      badgesDiv.style.padding = "4px 0";
+
+      if (Array.isArray(deviceTypes)) {
+        for (const entry of deviceTypes) {
+          let dtId;
+          if (typeof entry === "object" && entry !== null) {
+            dtId = entry.device_type ?? entry.deviceType ?? entry.type ?? null;
+          } else if (typeof entry === "number") {
+            dtId = entry;
+          }
+          if (dtId == null) continue;
+          const name = DEVICE_TYPE_NAMES[dtId] || `Unknown`;
+          const hexStr = `0x${dtId.toString(16).toUpperCase().padStart(4, "0")}`;
+          const badge = document.createElement("span");
+          badge.className = "device-type-badge";
+          badge.textContent = `${name} (${hexStr})`;
+          badgesDiv.appendChild(badge);
+        }
+        if (!badgesDiv.hasChildNodes()) {
+          badgesDiv.textContent = safeStr(raw);
+        }
+      } else {
+        badgesDiv.textContent = safeStr(raw);
+      }
+
+      card.appendChild(badgesDiv);
+      wrapper.appendChild(card);
+    }
+
+    // Card C: Power Source (cluster 0x002F)
+    const psAttrs = ep0Clusters[0x002F];
+    if (psAttrs) {
+      const rows = [];
+      const status = psAttrs[0x0000];
+      if (status != null) rows.push({ label: "Status", value: POWER_STATUS[status] ?? safeStr(status) });
+      const bv = psAttrs[0x000B];
+      if (bv != null) rows.push({ label: "Battery Voltage", value: `${(Number(bv) / 1000).toFixed(2)} V` });
+      const bp = psAttrs[0x000C];
+      if (bp != null) rows.push({ label: "Battery Remaining", value: `${(Number(bp) / 2).toFixed(1)} %` });
+      const bcl = psAttrs[0x000E];
+      if (bcl != null) rows.push({ label: "Charge Level", value: BATTERY_CHARGE_LEVEL[bcl] ?? safeStr(bcl) });
+
+      if (rows.length > 0) {
+        const card = document.createElement("div");
+        card.className = "info-card";
+        card.innerHTML = `<div class="info-card-title">Power Source</div>`;
+        for (const r of rows) {
+          const row = document.createElement("div");
+          row.className = "info-row";
+          row.innerHTML = `<span class="info-label">${this._esc(r.label)}</span><span class="info-value">${this._esc(r.value)}</span>`;
+          card.appendChild(row);
+        }
+        wrapper.appendChild(card);
+      }
+    }
+
+    // Card D: Network (NetworkCommissioning cluster 0x0031)
+    const netAttrs = ep0Clusters[0x0031];
+    if (netAttrs) {
+      const card = document.createElement("div");
+      card.className = "info-card";
+      card.innerHTML = `<div class="info-card-title">Network</div>`;
+      let hasContent = false;
+
+      const maxTime = netAttrs[0x0003];
+      if (maxTime != null) {
+        const row = document.createElement("div");
+        row.className = "info-row";
+        row.innerHTML = `<span class="info-label">Connect Max Time</span><span class="info-value">${this._esc(safeStr(maxTime))} s</span>`;
+        card.appendChild(row);
+        hasContent = true;
+      }
+
+      const networks = netAttrs[0x0001];
+      if (networks != null) {
+        let netArr = null;
+        try {
+          if (Array.isArray(networks)) netArr = networks;
+          else if (typeof networks === "string") netArr = JSON.parse(networks);
+        } catch (e) { netArr = null; }
+
+        if (Array.isArray(netArr) && netArr.length > 0) {
+          const row = document.createElement("div");
+          row.className = "info-row";
+          row.style.flexDirection = "column";
+          row.innerHTML = `<span class="info-label" style="width:auto;margin-bottom:4px">Networks</span>`;
+          for (const net of netArr) {
+            const item = document.createElement("div");
+            item.className = "network-item";
+            if (typeof net === "object" && net !== null) {
+              const connected = net.connected ? " (connected)" : "";
+              if (net.network_id || net.networkID) {
+                // Try to detect type by ssid or thread fields
+                const rawId = net.network_id || net.networkID || "";
+                const ssid = typeof rawId === "string" ? rawId : JSON.stringify(rawId);
+                item.textContent = `📶 ${ssid}${connected}`;
+              } else if (net.ssid) {
+                item.textContent = `📶 WiFi: ${net.ssid}${connected}`;
+              } else {
+                item.textContent = `📶 ${safeStr(net)}`;
+              }
+            } else {
+              item.textContent = `📶 ${safeStr(net)}`;
+            }
+            row.appendChild(item);
+          }
+          card.appendChild(row);
+          hasContent = true;
+        } else if (netArr === null) {
+          const row = document.createElement("div");
+          row.className = "info-row";
+          row.innerHTML = `<span class="info-label">Networks</span><span class="info-value">${this._esc(safeStr(networks))}</span>`;
+          card.appendChild(row);
+          hasContent = true;
+        }
+      }
+
+      if (hasContent) wrapper.appendChild(card);
+    }
+
+    // Card E: General Diagnostics (cluster 0x0033)
+    const diagAttrs = ep0Clusters[0x0033];
+    if (diagAttrs) {
+      const rows = [];
+      const uptime = diagAttrs[0x0002];
+      if (uptime != null) rows.push({ label: "Uptime", value: formatUptime(Number(uptime)), cls: "uptime" });
+      const bootReason = diagAttrs[0x0008];
+      if (bootReason != null) rows.push({ label: "Boot Reason", value: BOOT_REASON[bootReason] ?? safeStr(bootReason) });
+      const faults = diagAttrs[0x0003];
+      if (faults != null) {
+        let faultStr;
+        if (Array.isArray(faults) && faults.length === 0) faultStr = "None";
+        else faultStr = safeStr(faults);
+        rows.push({ label: "Active HW Faults", value: faultStr });
+      }
+
+      if (rows.length > 0) {
+        const card = document.createElement("div");
+        card.className = "info-card";
+        card.innerHTML = `<div class="info-card-title">General Diagnostics</div>`;
+        for (const r of rows) {
+          const row = document.createElement("div");
+          row.className = "info-row";
+          row.innerHTML = `<span class="info-label">${this._esc(r.label)}</span><span class="info-value${r.cls ? " " + r.cls : ""}">${this._esc(r.value)}</span>`;
+          card.appendChild(row);
+        }
+        wrapper.appendChild(card);
+      }
+    }
+
+    return wrapper;
+  }
+
   // ── Render one endpoint's clusters ──
 
   _renderEpContent(node, epId, clusters, collapseAll = false) {
@@ -915,6 +1191,14 @@ class MatterPanel extends HTMLElement {
     const epContent = this.shadowRoot.getElementById("ep-content");
     if (!epContent) return;
     epContent.innerHTML = "";
+
+    // For endpoint 0, prepend structured info cards
+    if (epId === 0) {
+      const infoCards = this._renderEp0InfoCards(nodeId, clusters);
+      if (infoCards.hasChildNodes()) {
+        epContent.appendChild(infoCards);
+      }
+    }
 
     const clusterIds = Object.keys(clusters).map(Number).sort((a, b) => a - b);
     if (clusterIds.length === 0) {
