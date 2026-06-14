@@ -274,25 +274,26 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
         dev_reg = dr.async_get(hass)
 
         result = {}
-        # Look for devices linked to our config entries
-        domain_data = hass.data.get(DOMAIN, {})
-        entry_ids = [eid for eid in domain_data if eid not in ("_ws_registered", "_panel_registered")]
-
+        # Devices are registered by the official HA Matter integration under domain "matter".
+        # Identifiers look like ("matter", "1") or ("matter", "node_1") depending on HA version.
         for device in dev_reg.devices.values():
-            # Check if this device belongs to our integration
-            if any(ident[0] == DOMAIN for ident in device.identifiers):
-                # Try to extract node_id from identifiers
-                for ident in device.identifiers:
-                    if ident[0] == DOMAIN and len(ident) > 1:
-                        try:
-                            node_id = int(str(ident[1]).split("_")[0])
-                            result[node_id] = {
-                                "name": device.name_by_user or device.name or f"Node {node_id}",
-                                "manufacturer": device.manufacturer,
-                                "model": device.model,
-                            }
-                        except (ValueError, IndexError):
-                            pass
+            for ident in device.identifiers:
+                if ident[0] == "matter" and len(ident) > 1:
+                    raw = str(ident[1]).strip()
+                    # Strip common prefixes: "node_", "matter_node_"
+                    for prefix in ("matter_node_", "node_"):
+                        if raw.startswith(prefix):
+                            raw = raw[len(prefix):]
+                            break
+                    try:
+                        node_id = int(raw)
+                        result[node_id] = {
+                            "name": device.name_by_user or device.name or f"Node {node_id}",
+                            "manufacturer": device.manufacturer,
+                            "model": device.model,
+                        }
+                    except (ValueError, TypeError):
+                        pass
 
         connection.send_result(msg["id"], {"devices": result})
 
