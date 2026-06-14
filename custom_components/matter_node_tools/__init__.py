@@ -9,7 +9,8 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
-from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.http import HomeAssistantView
+from aiohttp import web
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
@@ -268,23 +269,34 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_invoke_command)
 
 
+class MatterPanelJSView(HomeAssistantView):
+    """Serve the Matter panel JS file."""
+
+    url = "/matter_node_tools_static/matter-panel.js"
+    name = "matter_node_tools:panel_js"
+    requires_auth = False
+
+    async def get(self, request: web.Request) -> web.Response:
+        js_path = Path(__file__).parent / "frontend" / "matter-panel.js"
+        content = await hass_read_file(js_path)
+        return web.Response(text=content, content_type="application/javascript")
+
+
+async def hass_read_file(path: Path) -> str:
+    """Read a file asynchronously."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, path.read_text, "utf-8")
+
+
 async def _register_panel(hass: HomeAssistant) -> None:
     """Register the Matter Node Explorer custom panel and serve its static assets."""
-    # Only register once (survives multiple config entries)
     if hass.data.get(DOMAIN, {}).get("_panel_registered"):
         return
     hass.data.setdefault(DOMAIN, {})["_panel_registered"] = True
 
-    frontend_dir = Path(__file__).parent / "frontend"
-
-    # Serve /matter_node_tools_static/* → frontend/
-    hass.http.async_register_static_paths([
-        StaticPathConfig(
-            "/matter_node_tools_static",
-            str(frontend_dir),
-            cache_headers=False,
-        )
-    ])
+    # Register the JS file view
+    hass.http.register_view(MatterPanelJSView)
 
     # Load panel_custom component explicitly, then register the panel
     from homeassistant.components.panel_custom import async_register_panel  # noqa: PLC0415
