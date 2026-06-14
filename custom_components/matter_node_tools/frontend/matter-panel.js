@@ -317,6 +317,9 @@ const STYLES = `
     margin-left: auto;
   }
 
+  .node-name { font-weight: 500; }
+  .node-list-meta { font-size: 0.75em; color: var(--secondary-text-color, #757575); }
+
   /* ── Right detail pane ── */
   .detail-pane {
     flex: 1;
@@ -656,6 +659,7 @@ class MatterPanel extends HTMLElement {
     this._selectedEpId = null; // per-node selected endpoint
     this._nodeEpSelection = {}; // nodeId -> epId
     this._attrValues = {}; // "nodeId/ep/cl/attr" -> value
+    this._haDevices = {}; // nodeId -> { name, manufacturer, model }
     this.attachShadow({ mode: "open" });
   }
 
@@ -665,6 +669,7 @@ class MatterPanel extends HTMLElement {
       this._loaded = true;
       this._buildShell();
       this._loadNodes();
+      this._loadHaDevices();
     }
   }
 
@@ -710,6 +715,21 @@ class MatterPanel extends HTMLElement {
     dot.className = "status-dot" + (state === "connected" ? "" : ` ${state}`);
     const labels = { connected: "Connected", disconnected: "Disconnected", loading: "Loading…" };
     label.textContent = labels[state] || state;
+  }
+
+  // ── Load HA device names ──
+
+  async _loadHaDevices() {
+    try {
+      const resp = await this._hass.connection.sendMessagePromise({
+        type: "matter_node_tools/get_ha_devices"
+      });
+      this._haDevices = resp.devices || {};
+      // Re-render node list if already showing
+      this._renderNodeList();
+    } catch(e) {
+      this._haDevices = {};
+    }
   }
 
   // ── Load node list ──
@@ -760,13 +780,20 @@ class MatterPanel extends HTMLElement {
 
     for (const node of this._nodes) {
       const nodeId = node.node_id;
-      const label = getNodeLabel(node) || `Node ${nodeId}`;
+      const haDevice = this._haDevices[nodeId];
+      const primaryName = (haDevice && haDevice.name) || getNodeLabel(node) || `Node ${nodeId}`;
+      const meta = haDevice
+        ? [haDevice.manufacturer, haDevice.model].filter(Boolean).join(" · ")
+        : null;
       const item = document.createElement("div");
       item.className = "node-item" + (nodeId === this._selectedNodeId ? " selected" : "");
       item.dataset.nodeId = nodeId;
       item.innerHTML = `
         <span class="node-dot"></span>
-        <span class="node-name">${this._esc(label)}</span>
+        <span style="flex:1;min-width:0">
+          <div class="node-name">${this._esc(primaryName)}</div>
+          ${meta ? `<div class="node-list-meta">${this._esc(meta)}</div>` : ""}
+        </span>
         <span class="node-id-badge">#${nodeId}</span>
       `;
       item.addEventListener("click", () => this._selectNode(nodeId));
@@ -809,13 +836,21 @@ class MatterPanel extends HTMLElement {
 
   _renderNodeDetail(node) {
     const nodeId = node.node_id;
-    const label = getNodeLabel(node) || `Node ${nodeId}`;
+    const haDevice = this._haDevices[nodeId];
+    const primaryName = (haDevice && haDevice.name) || getNodeLabel(node) || `Node ${nodeId}`;
+    const meta = haDevice
+      ? [haDevice.manufacturer, haDevice.model].filter(Boolean).join(" · ")
+      : null;
     const eps = parseNodeAttributes(node);
-    const epIds = Object.keys(eps).map(Number).sort((a, b) => a - b);
+    const allEpIds = Object.keys(eps).map(Number).sort((a, b) => a - b);
+    // Application endpoints (1+) first, then endpoint 0 last
+    const appEpIds = allEpIds.filter(ep => ep !== 0);
+    const hasEp0 = allEpIds.includes(0);
+    const orderedEpIds = hasEp0 ? [...appEpIds, 0] : appEpIds;
 
-    // Remember or default endpoint selection
-    if (!this._nodeEpSelection[nodeId] || !epIds.includes(this._nodeEpSelection[nodeId])) {
-      this._nodeEpSelection[nodeId] = epIds[0] ?? 0;
+    // Remember or default endpoint selection (prefer first app endpoint)
+    if (!this._nodeEpSelection[nodeId] || !allEpIds.includes(this._nodeEpSelection[nodeId])) {
+      this._nodeEpSelection[nodeId] = orderedEpIds[0] ?? 0;
     }
     const activeEp = this._nodeEpSelection[nodeId];
 
@@ -824,22 +859,34 @@ class MatterPanel extends HTMLElement {
     // Node header
     let html = `
       <div class="node-header">
-        <h2>${this._esc(label)}</h2>
-        <div class="node-meta">Node ID: ${nodeId} &nbsp;|&nbsp; ${epIds.length} endpoint${epIds.length !== 1 ? "s" : ""}</div>
+        <h2>${this._esc(primaryName)}</h2>
+        <div class="node-meta">
+          ${meta ? `${this._esc(meta)} &nbsp;|&nbsp; ` : ""}Node ID: ${nodeId} &nbsp;|&nbsp; ${allEpIds.length} endpoint${allEpIds.length !== 1 ? "s" : ""}
+        </div>
       </div>
     `;
 
-    if (epIds.length === 0) {
+    if (orderedEpIds.length === 0) {
       html += '<div class="placeholder">No endpoint data available</div>';
       detail.innerHTML = html;
       return;
     }
 
-    // Endpoint tabs
+    // Endpoint tabs — app endpoints first, then "⚙ Node Configuration" for ep 0
     html += '<div class="ep-tabs">';
-    for (const ep of epIds) {
+    for (const ep of orderedEpIds) {
       const active = ep === activeEp ? " active" : "";
-      html += `<button class="ep-tab${active}" data-ep="${ep}">Endpoint ${ep}</button>`;
+      let tabLabel;
+      if (ep === 0) {
+        tabLabel = "⚙ Node Configuration";
+      } else {
+        // Find primary cluster hint (first non-Descriptor, non-Binding cluster)
+        const clusterIds = Object.keys(eps[ep] || {}).map(Number).sort((a, b) => a - b);
+        const primaryCluster = clusterIds.find(id => id !== 0x001D && id !== 0x001E);
+        const hint = primaryCluster !== undefined ? clusterName(primaryCluster) : null;
+        tabLabel = hint ? `${ep} · ${hint}` : String(ep);
+      }
+      html += `<button class="ep-tab${active}" data-ep="${ep}">${this._esc(tabLabel)}</button>`;
     }
     html += "</div>";
 
@@ -853,17 +900,17 @@ class MatterPanel extends HTMLElement {
         const ep = parseInt(tab.dataset.ep);
         this._nodeEpSelection[nodeId] = ep;
         detail.querySelectorAll(".ep-tab").forEach((t) => t.classList.toggle("active", parseInt(t.dataset.ep) === ep));
-        this._renderEpContent(node, ep, eps[ep] || {});
+        this._renderEpContent(node, ep, eps[ep] || {}, ep === 0);
       });
     });
 
-    // Render active endpoint
-    this._renderEpContent(node, activeEp, eps[activeEp] || {});
+    // Render active endpoint (ep 0 starts collapsed)
+    this._renderEpContent(node, activeEp, eps[activeEp] || {}, activeEp === 0);
   }
 
   // ── Render one endpoint's clusters ──
 
-  _renderEpContent(node, epId, clusters) {
+  _renderEpContent(node, epId, clusters, collapseAll = false) {
     const nodeId = node.node_id;
     const epContent = this.shadowRoot.getElementById("ep-content");
     if (!epContent) return;
@@ -876,14 +923,14 @@ class MatterPanel extends HTMLElement {
     }
 
     for (const clusterId of clusterIds) {
-      const card = this._buildClusterCard(node, epId, clusterId, clusters[clusterId]);
+      const card = this._buildClusterCard(node, epId, clusterId, clusters[clusterId], collapseAll);
       epContent.appendChild(card);
     }
   }
 
   // ── Build a cluster card element ──
 
-  _buildClusterCard(node, epId, clusterId, attrs) {
+  _buildClusterCard(node, epId, clusterId, attrs, startCollapsed = false) {
     const nodeId = node.node_id;
     const cName = clusterName(clusterId);
     const card = document.createElement("div");
@@ -899,7 +946,8 @@ class MatterPanel extends HTMLElement {
     `;
 
     const body = document.createElement("div");
-    body.className = "cluster-body";
+    body.className = "cluster-body" + (startCollapsed ? " collapsed" : "");
+    if (startCollapsed) header.classList.add("collapsed");
 
     // Toggle collapse
     header.addEventListener("click", () => {

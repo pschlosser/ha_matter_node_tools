@@ -262,11 +262,46 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
         except Exception as err:  # noqa: BLE001
             connection.send_error(msg["id"], "matter_error", str(err))
 
+    @websocket_api.websocket_command({vol.Required("type"): "matter_node_tools/get_ha_devices"})
+    @websocket_api.async_response
+    async def ws_get_ha_devices(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict,
+    ) -> None:
+        """Return HA device registry entries for Matter Node Tools nodes."""
+        from homeassistant.helpers import device_registry as dr
+        dev_reg = dr.async_get(hass)
+
+        result = {}
+        # Look for devices linked to our config entries
+        domain_data = hass.data.get(DOMAIN, {})
+        entry_ids = [eid for eid in domain_data if eid not in ("_ws_registered", "_panel_registered")]
+
+        for device in dev_reg.devices.values():
+            # Check if this device belongs to our integration
+            if any(ident[0] == DOMAIN for ident in device.identifiers):
+                # Try to extract node_id from identifiers
+                for ident in device.identifiers:
+                    if ident[0] == DOMAIN and len(ident) > 1:
+                        try:
+                            node_id = int(str(ident[1]).split("_")[0])
+                            result[node_id] = {
+                                "name": device.name_by_user or device.name or f"Node {node_id}",
+                                "manufacturer": device.manufacturer,
+                                "model": device.model,
+                            }
+                        except (ValueError, IndexError):
+                            pass
+
+        connection.send_result(msg["id"], {"devices": result})
+
     websocket_api.async_register_command(hass, ws_get_nodes)
     websocket_api.async_register_command(hass, ws_get_node)
     websocket_api.async_register_command(hass, ws_read_attribute)
     websocket_api.async_register_command(hass, ws_write_attribute)
     websocket_api.async_register_command(hass, ws_invoke_command)
+    websocket_api.async_register_command(hass, ws_get_ha_devices)
 
 
 class MatterPanelJSView(HomeAssistantView):
