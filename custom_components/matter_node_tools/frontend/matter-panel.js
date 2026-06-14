@@ -636,7 +636,7 @@ const COMMAND_SCHEMAS = {
 const CLUSTER_COMMANDS = {
   0x0006: ["Toggle", "On", "Off", "OnWithRecallGlobalScene", "OnWithTimedOff", "OffWithEffect"],
   0x0008: ["MoveToLevel", "Move", "Step", "Stop", "MoveToLevelWithOnOff", "MoveWithOnOff", "StepWithOnOff", "StopWithOnOff"],
-  0x0080: ["EnableDisableAlarm", "SuppressAlarm", "EnableAlarm"],
+  0x0080: ["EnableDisableAlarm", "SuppressAlarm"],
   0x0101: ["LockDoor", "UnlockDoor", "UnlockWithTimeout", "GetLogRecord", "SetPINCode", "GetPINCode", "ClearPINCode", "ClearAllPINCodes"],
   0x0102: ["UpOrOpen", "DownOrClose", "StopMotion", "GoToLiftValue", "GoToLiftPercentage", "GoToTiltValue", "GoToTiltPercentage"],
   0x0201: ["SetpointRaiseLower", "SetWeeklySchedule", "GetWeeklySchedule", "ClearWeeklySchedule"],
