@@ -283,8 +283,11 @@ async def _register_panel(hass: HomeAssistant) -> None:
         cache_headers=False,
     )
 
-    # Register the sidebar panel
-    await hass.components.panel_custom.async_register_panel(
+    # Load panel_custom component explicitly, then register the panel
+    from homeassistant.components.panel_custom import async_register_panel  # noqa: PLC0415
+
+    await async_register_panel(
+        hass,
         webcomponent_name="matter-panel",
         frontend_url_path="matter_node_tools",
         sidebar_title="Matter Nodes",
