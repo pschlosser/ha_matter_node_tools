@@ -564,6 +564,11 @@ const STYLES = `
     color: var(--secondary-text-color, #757575);
     word-break: break-all;
   }
+  .command-form { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px 0; }
+  .command-field { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .command-field label { color: var(--primary-text-color); font-size: 0.85em; }
+  .bitmap-checks { display: flex; gap: 12px; }
+  .bitmap-checks label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 
   /* ── Error banner ── */
   .error-banner {
@@ -585,6 +590,47 @@ const STYLES = `
     color: var(--secondary-text-color, #757575);
   }
 `;
+
+// Structured field schemas for known commands: "clusterId/commandName" -> field definitions
+const COMMAND_SCHEMAS = {
+  // BooleanStateConfiguration (0x0080)
+  "128/EnableDisableAlarm": [
+    { name: "alarmsToEnableDisable", type: "bitmap", bits: ["Visual", "Audible"], label: "Alarms" }
+  ],
+  "128/SuppressAlarm": [
+    { name: "alarmsToSuppress", type: "bitmap", bits: ["Visual", "Audible"], label: "Alarms to suppress" }
+  ],
+  // OnOff (0x0006)
+  "6/MoveToOnTime": [
+    { name: "onTime", type: "number", label: "On Time (1/10s)", min: 0, max: 65535 }
+  ],
+  // LevelControl (0x0008)
+  "8/MoveToLevel": [
+    { name: "level", type: "number", label: "Level (0-254)", min: 0, max: 254 },
+    { name: "transitionTime", type: "number", label: "Transition Time (1/10s)", min: 0, max: 65535, optional: true }
+  ],
+  "8/MoveToLevelWithOnOff": [
+    { name: "level", type: "number", label: "Level (0-254)", min: 0, max: 254 },
+    { name: "transitionTime", type: "number", label: "Transition Time (1/10s)", min: 0, max: 65535, optional: true }
+  ],
+  // DoorLock (0x0101)
+  "257/LockDoor": [],
+  "257/UnlockDoor": [],
+  // WindowCovering (0x0102)
+  "258/GoToLiftPercentage": [
+    { name: "liftPercent100thsValue", type: "number", label: "Lift % (0-10000 = 0-100%)", min: 0, max: 10000 }
+  ],
+  // ColorControl (0x0300)
+  "768/MoveToHueAndSaturation": [
+    { name: "hue", type: "number", label: "Hue (0-254)", min: 0, max: 254 },
+    { name: "saturation", type: "number", label: "Saturation (0-254)", min: 0, max: 254 },
+    { name: "transitionTime", type: "number", label: "Transition Time (1/10s)", min: 0, max: 65535, optional: true }
+  ],
+  "768/MoveToColorTemperature": [
+    { name: "colorTemperatureMireds", type: "number", label: "Color Temperature (Mireds)", min: 0, max: 65535 },
+    { name: "transitionTime", type: "number", label: "Transition Time (1/10s)", min: 0, max: 65535, optional: true }
+  ],
+};
 
 // Known commands per cluster (for display purposes)
 const CLUSTER_COMMANDS = {
@@ -932,20 +978,7 @@ class MatterPanel extends HTMLElement {
       cmdSection.innerHTML = `<div class="commands-title">Commands</div>`;
 
       for (const cmd of cmds) {
-        const cmdRow = document.createElement("div");
-        cmdRow.className = "command-row";
-        cmdRow.innerHTML = `
-          <span class="command-name">${this._esc(cmd)}</span>
-          <input class="command-payload-input" placeholder="{}" title="JSON payload" value="{}" />
-          <button class="action-btn primary run-btn">Run</button>
-          <span class="command-result" id="cmd-result-${this._safeId(nodeId + cmd)}"></span>
-        `;
-        cmdRow.querySelector(".run-btn").addEventListener("click", (e) => {
-          const payloadInput = cmdRow.querySelector(".command-payload-input");
-          const resultEl = cmdRow.querySelector(".command-result");
-          this._invokeCmd(e.currentTarget, nodeId, epId, clusterId, cmd, payloadInput.value, resultEl);
-        });
-        cmdSection.appendChild(cmdRow);
+        cmdSection.appendChild(this._buildCommandRow(nodeId, epId, clusterId, cmd));
       }
       body.appendChild(cmdSection);
     }
@@ -1018,14 +1051,133 @@ class MatterPanel extends HTMLElement {
     }
   }
 
+  // ── Build command row ──
+
+  _buildCommandRow(nodeId, epId, clusterId, cmd) {
+    const schemaKey = `${clusterId}/${cmd}`;
+    const schema = COMMAND_SCHEMAS[schemaKey];
+
+    const row = document.createElement("div");
+    row.className = "command-row";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "command-name";
+    nameEl.textContent = cmd;
+    row.appendChild(nameEl);
+
+    const resultEl = document.createElement("span");
+    resultEl.className = "command-result";
+
+    if (schema !== undefined) {
+      // Structured form
+      if (schema.length > 0) {
+        const form = this._buildSchemaForm(schema);
+        row.appendChild(form);
+      }
+      const runBtn = document.createElement("button");
+      runBtn.className = "action-btn primary run-btn";
+      runBtn.textContent = "Run";
+      runBtn.addEventListener("click", () => {
+        const payload = schema.length > 0 ? this._readSchemaForm(row, schema) : {};
+        this._invokeCmd(runBtn, nodeId, epId, clusterId, cmd, payload, resultEl);
+      });
+      row.appendChild(runBtn);
+    } else {
+      // Fallback: JSON textarea
+      const input = document.createElement("input");
+      input.className = "command-payload-input";
+      input.placeholder = "{}";
+      input.value = "{}";
+      row.appendChild(input);
+      const runBtn = document.createElement("button");
+      runBtn.className = "action-btn primary run-btn";
+      runBtn.textContent = "Run";
+      runBtn.addEventListener("click", () => {
+        this._invokeCmd(runBtn, nodeId, epId, clusterId, cmd, input.value, resultEl);
+      });
+      row.appendChild(runBtn);
+    }
+
+    row.appendChild(resultEl);
+    return row;
+  }
+
+  _buildSchemaForm(schema) {
+    const form = document.createElement("div");
+    form.className = "command-form";
+    for (const field of schema) {
+      const fieldDiv = document.createElement("div");
+      fieldDiv.className = "command-field";
+      fieldDiv.dataset.fieldName = field.name;
+      fieldDiv.dataset.fieldType = field.type;
+      if (field.type === "bitmap") {
+        const lbl = document.createElement("label");
+        lbl.textContent = field.label + ":";
+        fieldDiv.appendChild(lbl);
+        const checks = document.createElement("div");
+        checks.className = "bitmap-checks";
+        field.bits.forEach((bitLabel, idx) => {
+          const checkLabel = document.createElement("label");
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.dataset.bit = idx;
+          checkLabel.appendChild(cb);
+          checkLabel.append(" " + bitLabel);
+          checks.appendChild(checkLabel);
+        });
+        fieldDiv.appendChild(checks);
+      } else if (field.type === "number") {
+        const lbl = document.createElement("label");
+        lbl.textContent = field.label + ": ";
+        const inp = document.createElement("input");
+        inp.type = "number";
+        if (field.min !== undefined) inp.min = field.min;
+        if (field.max !== undefined) inp.max = field.max;
+        inp.value = field.min ?? 0;
+        inp.style.width = "80px";
+        lbl.appendChild(inp);
+        fieldDiv.appendChild(lbl);
+      }
+      form.appendChild(fieldDiv);
+    }
+    return form;
+  }
+
+  _readSchemaForm(row, schema) {
+    const payload = {};
+    for (const field of schema) {
+      const fieldDiv = row.querySelector(`[data-field-name="${field.name}"]`);
+      if (!fieldDiv) continue;
+      if (field.type === "bitmap") {
+        let val = 0;
+        fieldDiv.querySelectorAll("input[type=checkbox]").forEach(cb => {
+          if (cb.checked) val |= (1 << parseInt(cb.dataset.bit));
+        });
+        payload[field.name] = val;
+      } else if (field.type === "number") {
+        const inp = fieldDiv.querySelector("input[type=number]");
+        if (inp && inp.value !== "") {
+          if (!field.optional || inp.value !== String(field.min ?? 0)) {
+            payload[field.name] = parseInt(inp.value);
+          }
+        }
+      }
+    }
+    return payload;
+  }
+
   // ── Invoke command ──
 
-  async _invokeCmd(btn, nodeId, epId, clusterId, commandName, payloadStr, resultEl) {
+  async _invokeCmd(btn, nodeId, epId, clusterId, commandName, payloadOrStr, resultEl) {
     let payload = {};
-    try {
-      payload = JSON.parse(payloadStr || "{}");
-    } catch {
-      if (resultEl) { resultEl.textContent = "Invalid JSON payload"; return; }
+    if (typeof payloadOrStr === "string") {
+      try {
+        payload = JSON.parse(payloadOrStr || "{}");
+      } catch {
+        if (resultEl) { resultEl.textContent = "Invalid JSON payload"; return; }
+      }
+    } else {
+      payload = payloadOrStr || {};
     }
 
     btn.disabled = true;
