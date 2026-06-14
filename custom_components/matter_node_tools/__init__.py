@@ -9,6 +9,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
@@ -277,11 +278,13 @@ async def _register_panel(hass: HomeAssistant) -> None:
     frontend_dir = Path(__file__).parent / "frontend"
 
     # Serve /matter_node_tools_static/* → frontend/
-    hass.http.register_static_path(
-        "/matter_node_tools_static",
-        str(frontend_dir),
-        cache_headers=False,
-    )
+    hass.http.async_register_static_paths([
+        StaticPathConfig(
+            "/matter_node_tools_static",
+            str(frontend_dir),
+            cache_headers=False,
+        )
+    ])
 
     # Load panel_custom component explicitly, then register the panel
     from homeassistant.components.panel_custom import async_register_panel  # noqa: PLC0415
