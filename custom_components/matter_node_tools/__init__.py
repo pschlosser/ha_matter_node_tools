@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
 
+from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import ServiceValidationError
@@ -65,6 +67,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     _register_services(hass, entry)
+    _register_websocket_api(hass)
+    await _register_panel(hass)
 
     return True
 
@@ -115,6 +119,181 @@ def _get_client(hass: HomeAssistant) -> MatterClient:
         if client is not None:
             return client
     raise ServiceValidationError("No Matter Node Tools instance configured")
+
+
+def _get_entry_data(hass: HomeAssistant) -> dict:
+    """Return entry data dict for the first available integration entry."""
+    domain_data = hass.data.get(DOMAIN, {})
+    for entry_data in domain_data.values():
+        if "client" in entry_data:
+            return entry_data
+    raise ServiceValidationError("No Matter Node Tools instance configured")
+
+
+def _register_websocket_api(hass: HomeAssistant) -> None:
+    """Register WebSocket API commands for the frontend panel."""
+    # Guard: only register once
+    if getattr(hass.data.get(DOMAIN, {}), "_ws_registered", False):
+        return
+    # Use a sentinel on the domain dict to avoid double-registration
+    hass.data.setdefault(DOMAIN, {}).setdefault("_ws_registered", False)
+    if hass.data[DOMAIN]["_ws_registered"]:
+        return
+    hass.data[DOMAIN]["_ws_registered"] = True
+
+    @websocket_api.websocket_command({vol.Required("type"): "matter_node_tools/get_nodes"})
+    @websocket_api.async_response
+    async def ws_get_nodes(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict,
+    ) -> None:
+        """Return all nodes from the coordinator cache."""
+        try:
+            entry_data = _get_entry_data(hass)
+            coordinator = entry_data["coordinator"]
+            nodes = coordinator.data or []
+            connection.send_result(msg["id"], {"nodes": nodes})
+        except Exception as err:  # noqa: BLE001
+            connection.send_error(msg["id"], "matter_error", str(err))
+
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): "matter_node_tools/get_node",
+            vol.Required("node_id"): int,
+        }
+    )
+    @websocket_api.async_response
+    async def ws_get_node(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict,
+    ) -> None:
+        """Return detailed data for a single node."""
+        try:
+            entry_data = _get_entry_data(hass)
+            client: MatterClient = entry_data["client"]
+            node = await client.get_node(msg["node_id"])
+            connection.send_result(msg["id"], {"node": node})
+        except Exception as err:  # noqa: BLE001
+            connection.send_error(msg["id"], "matter_error", str(err))
+
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): "matter_node_tools/read_attribute",
+            vol.Required("node_id"): int,
+            vol.Required("endpoint_id"): int,
+            vol.Required("cluster_id"): int,
+            vol.Required("attribute_id"): int,
+        }
+    )
+    @websocket_api.async_response
+    async def ws_read_attribute(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict,
+    ) -> None:
+        """Read a single attribute and return the value."""
+        try:
+            entry_data = _get_entry_data(hass)
+            client: MatterClient = entry_data["client"]
+            path = f"{msg['endpoint_id']}/{msg['cluster_id']}/{msg['attribute_id']}"
+            value = await client.read_attribute(msg["node_id"], path)
+            connection.send_result(msg["id"], {"value": value})
+        except Exception as err:  # noqa: BLE001
+            connection.send_error(msg["id"], "matter_error", str(err))
+
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): "matter_node_tools/write_attribute",
+            vol.Required("node_id"): int,
+            vol.Required("endpoint_id"): int,
+            vol.Required("cluster_id"): int,
+            vol.Required("attribute_id"): int,
+            vol.Required("value"): vol.Any(str, int, float, bool, dict, list),
+        }
+    )
+    @websocket_api.async_response
+    async def ws_write_attribute(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict,
+    ) -> None:
+        """Write a value to an attribute."""
+        try:
+            entry_data = _get_entry_data(hass)
+            client: MatterClient = entry_data["client"]
+            path = f"{msg['endpoint_id']}/{msg['cluster_id']}/{msg['attribute_id']}"
+            result = await client.write_attribute(msg["node_id"], path, msg["value"])
+            connection.send_result(msg["id"], {"result": result})
+        except Exception as err:  # noqa: BLE001
+            connection.send_error(msg["id"], "matter_error", str(err))
+
+    @websocket_api.websocket_command(
+        {
+            vol.Required("type"): "matter_node_tools/invoke_command",
+            vol.Required("node_id"): int,
+            vol.Required("endpoint_id"): int,
+            vol.Required("cluster_id"): int,
+            vol.Required("command_name"): str,
+            vol.Optional("payload"): dict,
+        }
+    )
+    @websocket_api.async_response
+    async def ws_invoke_command(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict,
+    ) -> None:
+        """Invoke a cluster command on a node endpoint."""
+        try:
+            entry_data = _get_entry_data(hass)
+            client: MatterClient = entry_data["client"]
+            result = await client.device_command(
+                msg["node_id"],
+                msg["endpoint_id"],
+                msg["cluster_id"],
+                msg["command_name"],
+                msg.get("payload", {}),
+            )
+            connection.send_result(msg["id"], {"result": result})
+        except Exception as err:  # noqa: BLE001
+            connection.send_error(msg["id"], "matter_error", str(err))
+
+    websocket_api.async_register_command(hass, ws_get_nodes)
+    websocket_api.async_register_command(hass, ws_get_node)
+    websocket_api.async_register_command(hass, ws_read_attribute)
+    websocket_api.async_register_command(hass, ws_write_attribute)
+    websocket_api.async_register_command(hass, ws_invoke_command)
+
+
+async def _register_panel(hass: HomeAssistant) -> None:
+    """Register the Matter Node Explorer custom panel and serve its static assets."""
+    # Only register once (survives multiple config entries)
+    if hass.data.get(DOMAIN, {}).get("_panel_registered"):
+        return
+    hass.data.setdefault(DOMAIN, {})["_panel_registered"] = True
+
+    frontend_dir = Path(__file__).parent / "frontend"
+
+    # Serve /matter_node_tools_static/* → frontend/
+    hass.http.register_static_path(
+        "/matter_node_tools_static",
+        str(frontend_dir),
+        cache_headers=False,
+    )
+
+    # Register the sidebar panel
+    await hass.components.panel_custom.async_register_panel(
+        webcomponent_name="matter-panel",
+        frontend_url_path="matter_node_tools",
+        sidebar_title="Matter Nodes",
+        sidebar_icon="mdi:chip",
+        module_url="/matter_node_tools_static/matter-panel.js",
+        embed_iframe=False,
+        require_admin=False,
+    )
+    _LOGGER.info("Matter Node Tools panel registered at /matter_node_tools")
 
 
 def _register_services(hass: HomeAssistant, entry: ConfigEntry) -> None:
