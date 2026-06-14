@@ -1,0 +1,222 @@
+refresh_nodes:
+  name: Refresh Nodes
+  description: Trigger an immediate refresh of all Matter nodes from the Matter Server.
+  fields: {}
+
+get_nodes:
+  name: Get Nodes
+  description: Retrieve the full list of all commissioned Matter nodes from the Matter Server and log the result.
+  fields: {}
+
+get_node:
+  name: Get Node
+  description: Retrieve detailed information for a single Matter node.
+  fields:
+    node_id:
+      name: Node ID
+      description: The numeric ID of the Matter node to retrieve.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+
+read_attribute:
+  name: Read Attribute
+  description: Read a single cluster attribute from a Matter node endpoint.
+  fields:
+    node_id:
+      name: Node ID
+      description: The numeric ID of the Matter node.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    endpoint_id:
+      name: Endpoint ID
+      description: The endpoint ID on the node (used when attribute_path is not set).
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    cluster_id:
+      name: Cluster ID
+      description: The cluster ID (decimal or hex, used when attribute_path is not set).
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    attribute_id:
+      name: Attribute ID
+      description: The attribute ID within the cluster (used when attribute_path is not set).
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    attribute_path:
+      name: Attribute Path
+      description: >
+        Full attribute path in "endpoint_id/cluster_id/attribute_id" format.
+        Overrides the individual endpoint_id/cluster_id/attribute_id fields.
+      required: false
+      selector:
+        text: {}
+
+write_attribute:
+  name: Write Attribute
+  description: Write a value to a cluster attribute on a Matter node endpoint.
+  fields:
+    node_id:
+      name: Node ID
+      description: The numeric ID of the Matter node.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    value:
+      name: Value
+      description: The value to write to the attribute.
+      required: true
+      selector:
+        text: {}
+    endpoint_id:
+      name: Endpoint ID
+      description: The endpoint ID on the node (used when attribute_path is not set).
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    cluster_id:
+      name: Cluster ID
+      description: The cluster ID (used when attribute_path is not set).
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    attribute_id:
+      name: Attribute ID
+      description: The attribute ID within the cluster (used when attribute_path is not set).
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    attribute_path:
+      name: Attribute Path
+      description: >
+        Full attribute path in "endpoint_id/cluster_id/attribute_id" format.
+        Overrides the individual endpoint_id/cluster_id/attribute_id fields.
+      required: false
+      selector:
+        text: {}
+
+invoke_command:
+  name: Invoke Command
+  description: Invoke a cluster command on a Matter node endpoint.
+  fields:
+    node_id:
+      name: Node ID
+      description: The numeric ID of the Matter node.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    endpoint_id:
+      name: Endpoint ID
+      description: The endpoint ID on the node.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    cluster_id:
+      name: Cluster ID
+      description: The cluster ID containing the command.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    command_name:
+      name: Command Name
+      description: The name of the command to invoke (e.g. "toggle", "moveToLevel").
+      required: true
+      selector:
+        text: {}
+    payload:
+      name: Payload
+      description: Optional dictionary of command arguments.
+      required: false
+      selector:
+        object: {}
+    command_id:
+      name: Command ID
+      description: Optional numeric command ID (informational).
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+
+dump_node:
+  name: Dump Node
+  description: >
+    Retrieve and log the full data dump of a single Matter node as formatted JSON.
+    Also fires the event matter_node_tools_node_dump with the node data.
+  fields:
+    node_id:
+      name: Node ID
+      description: The numeric ID of the Matter node to dump.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+
+find_cluster:
+  name: Find Cluster
+  description: Search all known Matter nodes for endpoints that implement a specific cluster.
+  fields:
+    cluster_id:
+      name: Cluster ID
+      description: The cluster ID to search for (e.g. 6 for OnOff, 0x0201 for Thermostat).
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    vendor_name:
+      name: Vendor Name (filter)
+      description: Optional vendor name substring filter (case-insensitive).
+      required: false
+      selector:
+        text: {}
+    product_name:
+      name: Product Name (filter)
+      description: Optional product name substring filter (case-insensitive).
+      required: false
+      selector:
+        text: {}

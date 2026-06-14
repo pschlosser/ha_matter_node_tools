@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit Matter Server verbinden",
+        "description": "Geben Sie die WebSocket-URL Ihrer Matter Server Instanz ein.",
+        "data": {
+          "ws_url": "WebSocket-URL",
+          "scan_interval": "Aktualisierungsintervall (Sekunden)",
+          "raw_log": "Rohes WebSocket-Logging aktivieren"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Matter Server nicht möglich. Bitte überprüfen Sie die URL und stellen Sie sicher, dass der Server läuft.",
+      "unknown": "Ein unerwarteter Fehler ist aufgetreten. Bitte prüfen Sie die Protokolldateien."
+    },
+    "abort": {
+      "already_configured": "Dieser Matter Server ist bereits konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Matter Node Tools Optionen",
+        "description": "Passen Sie das Aktualisierungsintervall und die Protokollierungseinstellungen an.",
+        "data": {
+          "scan_interval": "Aktualisierungsintervall (Sekunden)",
+          "raw_log": "Rohes WebSocket-Logging aktivieren"
+        }
+      }
+    }
+  }
+}

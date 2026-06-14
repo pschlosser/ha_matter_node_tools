@@ -1,0 +1,12 @@
+{
+  "domain": "matter_node_tools",
+  "name": "Matter Node Tools",
+  "version": "0.1.0",
+  "documentation": "https://github.com/pschlosser/ha_matter_node_tools",
+  "issue_tracker": "https://github.com/pschlosser/ha_matter_node_tools/issues",
+  "dependencies": [],
+  "codeowners": ["@pschlosser"],
+  "requirements": [],
+  "iot_class": "local_push",
+  "config_flow": true
+}
