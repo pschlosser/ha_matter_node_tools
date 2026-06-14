@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "documentation": "https://github.com/pschlosser/ha_matter_node_tools",
   "issue_tracker": "https://github.com/pschlosser/ha_matter_node_tools/issues",
-  "dependencies": [],
+  "dependencies": ["panel_custom"],
   "codeowners": ["@pschlosser"],
   "requirements": [],
   "iot_class": "local_push",
