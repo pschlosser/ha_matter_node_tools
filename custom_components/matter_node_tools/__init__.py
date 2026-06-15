@@ -290,9 +290,23 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
             for ident in device.identifiers:
                 if ident[0] != "matter" or len(ident) < 2:
                     continue
-                try:
-                    node_id = int(ident[1])
-                except (ValueError, TypeError):
+                raw = str(ident[1])
+                node_id = None
+                # Format: "deviceid_{fabric_id}-{node_id_hex16}-MatterNodeDevice"
+                if raw.startswith("deviceid_"):
+                    parts = raw[len("deviceid_"):].split("-")
+                    if len(parts) >= 2:
+                        try:
+                            node_id = int(parts[1], 16)
+                        except (ValueError, TypeError):
+                            pass
+                # Fallback: plain integer string
+                if node_id is None:
+                    try:
+                        node_id = int(raw)
+                    except (ValueError, TypeError):
+                        pass
+                if node_id is None:
                     continue
                 name = device.name_by_user or device.name or f"Node {node_id}"
                 result[node_id] = {
