@@ -280,10 +280,13 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
         dev_reg = dr.async_get(hass)
         result = {}
 
-        # The HA Matter integration registers devices with identifier ("matter", str(node_id)).
-        # Scan all devices and pick those whose identifier domain is "matter" with a
-        # plain integer as the second element.
+        # Also collect all devices for debug display in the panel
+        all_devices_debug = []
         for device in dev_reg.devices.values():
+            all_devices_debug.append({
+                "name": device.name_by_user or device.name,
+                "identifiers": [list(i) for i in device.identifiers],
+            })
             for ident in device.identifiers:
                 if ident[0] != "matter" or len(ident) < 2:
                     continue
@@ -297,16 +300,16 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
                     "manufacturer": device.manufacturer,
                     "model": device.model,
                 }
-                _LOGGER.info(
-                    "matter_node_tools: node_id=%d → %r (ident=%s)",
-                    node_id, name, ident,
-                )
                 break
 
         _LOGGER.info(
-            "matter_node_tools ws_get_ha_devices: returning %d mappings", len(result)
+            "matter_node_tools ws_get_ha_devices: %d matched, %d total devices",
+            len(result), len(all_devices_debug),
         )
-        connection.send_result(msg["id"], {"devices": result})
+        connection.send_result(msg["id"], {
+            "devices": result,
+            "debug_devices": all_devices_debug if not result else [],
+        })
 
     websocket_api.async_register_command(hass, ws_get_nodes)
     websocket_api.async_register_command(hass, ws_get_node)

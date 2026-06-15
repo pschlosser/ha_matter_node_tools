@@ -776,6 +776,7 @@ class MatterPanel extends HTMLElement {
       <div class="body">
         <div class="node-list" id="node-list">
           <div class="node-list-header">NODES</div>
+          <pre id="debug-banner" style="display:none;font-size:10px;padding:8px;white-space:pre-wrap;word-break:break-all;background:var(--error-color,#f44336);color:#fff;margin:4px;border-radius:4px"></pre>
           <div id="node-list-items"></div>
         </div>
         <div class="detail-pane" id="detail-pane">
@@ -808,10 +809,19 @@ class MatterPanel extends HTMLElement {
         type: "matter_node_tools/get_ha_devices"
       });
       this._haDevices = resp.devices || {};
-      console.debug("[MatterPanel] HA devices loaded:", this._haDevices);
+      // If no devices matched, show debug info in the header area
+      if (Object.keys(this._haDevices).length === 0 && resp.debug_devices && resp.debug_devices.length > 0) {
+        const debugEl = this.shadowRoot.getElementById("debug-banner");
+        if (debugEl) {
+          const lines = resp.debug_devices.map(d =>
+            `${d.name}: ${JSON.stringify(d.identifiers)}`
+          ).join("\n");
+          debugEl.textContent = "⚠ No matter device matched. All devices:\n" + lines;
+          debugEl.style.display = "block";
+        }
+      }
       this._renderNodeList();
     } catch(e) {
-      console.warn("[MatterPanel] Could not load HA devices:", e);
       this._haDevices = {};
     }
   }
