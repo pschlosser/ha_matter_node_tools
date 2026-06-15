@@ -155,6 +155,11 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
             entry_data = _get_entry_data(hass)
             coordinator = entry_data["coordinator"]
             nodes = coordinator.data or []
+            # Log sample attribute keys so frontend can adapt to the server's path format
+            for node in nodes[:1]:
+                attrs = node.get("attributes", {})
+                sample_keys = list(attrs.keys())[:10]
+                _LOGGER.info("matter_node_tools node %s sample attribute keys: %s", node.get("node_id"), sample_keys)
             connection.send_result(msg["id"], {"nodes": nodes})
         except Exception as err:  # noqa: BLE001
             connection.send_error(msg["id"], "matter_error", str(err))
