@@ -980,10 +980,10 @@ class MatterPanel extends HTMLElement {
         const UTILITY_CLUSTERS = new Set([0x0003,0x0004,0x001D,0x001E,0x001F,0x003F,0x0040,0x0041]);
         // Prefer specific functional clusters over generic ones
         const CLUSTER_PRIORITY = [
-          0x0080,0x0101,0x0102,0x0201,0x0300,0x0059,0x0081,
+          0x0045,0x0101,0x0102,0x0201,0x0300,0x0059,0x0081,
           0x0006,0x0008,0x0200,0x0202,
           0x0402,0x0403,0x0404,0x0405,0x0406,0x0400,
-          0x0045,0x0500,
+          0x0080,0x0500,
         ];
         const appClusters = clusterIds.filter(id => !UTILITY_CLUSTERS.has(id));
         const primaryCluster = CLUSTER_PRIORITY.find(id => appClusters.includes(id)) ?? appClusters[0];
