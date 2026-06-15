@@ -240,26 +240,26 @@ function parseNodeAttributes(node) {
  * then NodeLabel (0x0028, 0x0005).
  */
 function getNodeLabel(node) {
+  // Check node-level name fields
+  if (node.name && String(node.name).trim()) return String(node.name);
+  if (node.node_label && String(node.node_label).trim()) return String(node.node_label);
+
   const attrs = node.attributes || {};
-  // Try multiple path formats the Matter server might use
-  const candidates = [
-    attrs["0/40/3"],   // decimal cluster id
-    attrs["0/0x0028/0x0003"],
-    attrs["0/40/0x0003"],
-  ];
-  for (const v of candidates) {
-    if (v != null && String(v).trim() !== "") return String(v);
+  // Scan all attribute keys for BasicInformation ProductName and NodeLabel
+  // regardless of exact path format (decimal, hex, mixed)
+  let productName = null;
+  let nodeLabel = null;
+  for (const [key, value] of Object.entries(attrs)) {
+    const parts = key.split("/");
+    if (parts.length < 3) continue;
+    const ep = parseInt(parts[0], 10);
+    const cl = parseInt(parts[1], 10);  // handles "40" and "0x0028"
+    const at = parseInt(parts[2], 10);  // handles "3" and "0x0003"
+    if (ep !== 0 || cl !== 40) continue;  // BasicInformation = cluster 40 = 0x28
+    if (at === 3 && value != null && String(value).trim()) productName = String(value);
+    if (at === 5 && value != null && String(value).trim()) nodeLabel = String(value);
   }
-  const labelCandidates = [
-    attrs["0/40/5"],
-    attrs["0/0x0028/0x0005"],
-  ];
-  for (const v of labelCandidates) {
-    if (v != null && String(v).trim() !== "") return String(v);
-  }
-  // Also check node-level name fields
-  if (node.name) return String(node.name);
-  return null;
+  return productName || nodeLabel || null;
 }
 
 const STYLES = `
