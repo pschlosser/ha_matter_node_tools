@@ -274,34 +274,38 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
         connection: websocket_api.ActiveConnection,
         msg: dict,
     ) -> None:
-        """Return HA device registry entries for Matter Node Tools nodes."""
+        """Return HA device registry entries for Matter nodes (by user-assigned name)."""
         from homeassistant.helpers import device_registry as dr
+
         dev_reg = dr.async_get(hass)
 
+        # Find all config entries belonging to the official 'matter' integration
+        matter_entry_ids = {
+            e.entry_id for e in hass.config_entries.async_entries("matter")
+        }
+
         result = {}
-        # Log all device identifiers at INFO so they appear in the HA log
         for device in dev_reg.devices.values():
+            # Only consider devices linked to a Matter config entry
+            if not (device.config_entries & matter_entry_ids):
+                continue
+
             _LOGGER.info(
-                "matter_node_tools device scan: name=%r identifiers=%s",
-                device.name,
+                "matter_node_tools found matter device %r identifiers=%s",
+                device.name_by_user or device.name,
                 list(device.identifiers),
             )
 
-        # Devices are registered by the official HA Matter integration under domain "matter".
-        # Try multiple known identifier formats across HA versions.
-        for device in dev_reg.devices.values():
+            # Try every identifier tuple to extract a node_id integer
             for ident in device.identifiers:
-                if ident[0] != "matter" or len(ident) < 2:
-                    continue
-                raw = str(ident[1]).strip()
-                # Strip common prefixes: "node_", "matter_node_", "deviceid_"
+                raw = str(ident[-1]).strip()
+                # Strip known prefixes
                 for prefix in ("matter_node_", "node_", "deviceid_"):
-                    if raw.startswith(prefix):
+                    if raw.lower().startswith(prefix):
                         raw = raw[len(prefix):]
                         break
-                # Also try splitting on underscore and taking first part
-                candidate = raw.split("_")[0] if "_" in raw else raw
-                for val in (raw, candidate):
+                # Try the whole value and the first underscore-segment
+                for val in (raw, raw.split("_")[0]):
                     try:
                         node_id = int(val)
                         result[node_id] = {
@@ -312,8 +316,10 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
                         break
                     except (ValueError, TypeError):
                         pass
+                if node_id in result:
+                    break
 
-        _LOGGER.debug("ws_get_ha_devices result: %s", result)
+        _LOGGER.info("matter_node_tools ws_get_ha_devices returning %d devices", len(result))
         connection.send_result(msg["id"], {"devices": result})
 
     websocket_api.async_register_command(hass, ws_get_nodes)
