@@ -241,10 +241,24 @@ function parseNodeAttributes(node) {
  */
 function getNodeLabel(node) {
   const attrs = node.attributes || {};
-  const productName = attrs["0/40/3"];
-  if (productName) return String(productName);
-  const nodeLabel = attrs["0/40/5"];
-  if (nodeLabel) return String(nodeLabel);
+  // Try multiple path formats the Matter server might use
+  const candidates = [
+    attrs["0/40/3"],   // decimal cluster id
+    attrs["0/0x0028/0x0003"],
+    attrs["0/40/0x0003"],
+  ];
+  for (const v of candidates) {
+    if (v != null && String(v).trim() !== "") return String(v);
+  }
+  const labelCandidates = [
+    attrs["0/40/5"],
+    attrs["0/0x0028/0x0005"],
+  ];
+  for (const v of labelCandidates) {
+    if (v != null && String(v).trim() !== "") return String(v);
+  }
+  // Also check node-level name fields
+  if (node.name) return String(node.name);
   return null;
 }
 
@@ -851,10 +865,11 @@ class MatterPanel extends HTMLElement {
     for (const node of this._nodes) {
       const nodeId = node.node_id;
       const haDevice = this._haDevices[nodeId];
-      const primaryName = (haDevice && haDevice.name) || getNodeLabel(node) || `Node ${nodeId}`;
+      const labelFromAttrs = getNodeLabel(node);
+      const primaryName = (haDevice && haDevice.name) || labelFromAttrs || `Node ${nodeId}`;
       const meta = haDevice
         ? [haDevice.manufacturer, haDevice.model].filter(Boolean).join(" · ")
-        : null;
+        : (labelFromAttrs ? `Node ${nodeId}` : null);
       const item = document.createElement("div");
       item.className = "node-item" + (nodeId === this._selectedNodeId ? " selected" : "");
       item.dataset.nodeId = nodeId;
@@ -953,7 +968,15 @@ class MatterPanel extends HTMLElement {
         // Find primary cluster hint (first non-Descriptor, non-Binding cluster)
         const clusterIds = Object.keys(eps[ep] || {}).map(Number).sort((a, b) => a - b);
         const UTILITY_CLUSTERS = new Set([0x0003,0x0004,0x001D,0x001E,0x001F,0x003F,0x0040,0x0041]);
-        const primaryCluster = clusterIds.find(id => !UTILITY_CLUSTERS.has(id));
+        // Prefer specific functional clusters over generic ones
+        const CLUSTER_PRIORITY = [
+          0x0080,0x0101,0x0102,0x0201,0x0300,0x0059,0x0081,
+          0x0006,0x0008,0x0200,0x0202,
+          0x0402,0x0403,0x0404,0x0405,0x0406,0x0400,
+          0x0045,0x0500,
+        ];
+        const appClusters = clusterIds.filter(id => !UTILITY_CLUSTERS.has(id));
+        const primaryCluster = CLUSTER_PRIORITY.find(id => appClusters.includes(id)) ?? appClusters[0];
         const hint = primaryCluster !== undefined ? clusterName(primaryCluster) : null;
         tabLabel = hint ? `${ep} · ${hint}` : String(ep);
       }
