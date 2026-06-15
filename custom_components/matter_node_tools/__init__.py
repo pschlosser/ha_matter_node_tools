@@ -274,52 +274,69 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
         connection: websocket_api.ActiveConnection,
         msg: dict,
     ) -> None:
-        """Return HA device registry entries for Matter nodes (by user-assigned name)."""
-        from homeassistant.helpers import device_registry as dr
+        """Return HA device names for Matter nodes keyed by node_id."""
+        from homeassistant.helpers import device_registry as dr, entity_registry as er
 
         dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
 
-        # Find all config entries belonging to the official 'matter' integration
+        result = {}
+
+        # Strategy: find Matter entities, extract node_id from unique_id,
+        # then look up the device name.
+        # HA Matter entity unique_ids contain the node_id, e.g.:
+        #   "<fabric_id>-<node_id>-<endpoint>-<cluster>-<attribute>"
+        # We find entities with platform="matter" and parse their unique_id.
         matter_entry_ids = {
             e.entry_id for e in hass.config_entries.async_entries("matter")
         }
 
-        result = {}
+        # Build device_id -> (name_by_user or name) mapping for matter devices
+        matter_devices: dict[str, dict] = {}
         for device in dev_reg.devices.values():
-            # Only consider devices linked to a Matter config entry
-            if not (device.config_entries & matter_entry_ids):
+            if device.config_entries & matter_entry_ids:
+                matter_devices[device.id] = {
+                    "name": device.name_by_user or device.name,
+                    "manufacturer": device.manufacturer,
+                    "model": device.model,
+                    "identifiers": list(device.identifiers),
+                }
+
+        _LOGGER.info(
+            "matter_node_tools: found %d matter devices in registry", len(matter_devices)
+        )
+
+        # Find matter entities and try to extract node_id from unique_id
+        for entity in ent_reg.entities.values():
+            if entity.config_entry_id not in matter_entry_ids:
                 continue
-
-            _LOGGER.info(
-                "matter_node_tools found matter device %r identifiers=%s",
-                device.name_by_user or device.name,
-                list(device.identifiers),
-            )
-
-            # Try every identifier tuple to extract a node_id integer
-            for ident in device.identifiers:
-                raw = str(ident[-1]).strip()
-                # Strip known prefixes
-                for prefix in ("matter_node_", "node_", "deviceid_"):
-                    if raw.lower().startswith(prefix):
-                        raw = raw[len(prefix):]
-                        break
-                # Try the whole value and the first underscore-segment
-                for val in (raw, raw.split("_")[0]):
-                    try:
-                        node_id = int(val)
+            if entity.device_id not in matter_devices:
+                continue
+            uid = entity.unique_id or ""
+            # unique_id format varies; split on "-" and try each segment as node_id
+            # Common formats: "fabricid-nodeid-ep-cl-at" or "nodeid-ep-cl-at"
+            parts = uid.split("-")
+            for i, part in enumerate(parts):
+                try:
+                    node_id = int(part)
+                    if node_id > 0 and node_id not in result:
+                        dev = matter_devices[entity.device_id]
                         result[node_id] = {
-                            "name": device.name_by_user or device.name or f"Node {node_id}",
-                            "manufacturer": device.manufacturer,
-                            "model": device.model,
+                            "name": dev["name"] or f"Node {node_id}",
+                            "manufacturer": dev["manufacturer"],
+                            "model": dev["model"],
                         }
+                        _LOGGER.info(
+                            "matter_node_tools: mapped node_id=%d to device %r (uid=%s)",
+                            node_id, dev["name"], uid,
+                        )
                         break
-                    except (ValueError, TypeError):
-                        pass
-                if node_id in result:
-                    break
+                except (ValueError, TypeError):
+                    continue
 
-        _LOGGER.info("matter_node_tools ws_get_ha_devices returning %d devices", len(result))
+        _LOGGER.info(
+            "matter_node_tools ws_get_ha_devices: returning %d node→name mappings", len(result)
+        )
         connection.send_result(msg["id"], {"devices": result})
 
     websocket_api.async_register_command(hass, ws_get_nodes)
