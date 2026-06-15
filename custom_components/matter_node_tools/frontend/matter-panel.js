@@ -794,9 +794,10 @@ class MatterPanel extends HTMLElement {
         type: "matter_node_tools/get_ha_devices"
       });
       this._haDevices = resp.devices || {};
-      // Re-render node list if already showing
+      console.debug("[MatterPanel] HA devices loaded:", this._haDevices);
       this._renderNodeList();
     } catch(e) {
+      console.warn("[MatterPanel] Could not load HA devices:", e);
       this._haDevices = {};
     }
   }
@@ -951,7 +952,8 @@ class MatterPanel extends HTMLElement {
       } else {
         // Find primary cluster hint (first non-Descriptor, non-Binding cluster)
         const clusterIds = Object.keys(eps[ep] || {}).map(Number).sort((a, b) => a - b);
-        const primaryCluster = clusterIds.find(id => id !== 0x001D && id !== 0x001E);
+        const UTILITY_CLUSTERS = new Set([0x0003,0x0004,0x001D,0x001E,0x001F,0x003F,0x0040,0x0041]);
+        const primaryCluster = clusterIds.find(id => !UTILITY_CLUSTERS.has(id));
         const hint = primaryCluster !== undefined ? clusterName(primaryCluster) : null;
         tabLabel = hint ? `${ep} · ${hint}` : String(ep);
       }
