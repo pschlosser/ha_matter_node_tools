@@ -274,10 +274,13 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
         dev_reg = dr.async_get(hass)
 
         result = {}
-        # Log all device identifiers for debugging
+        # Log all device identifiers at INFO so they appear in the HA log
         for device in dev_reg.devices.values():
-            for ident in device.identifiers:
-                _LOGGER.debug("Device %s identifiers: %s", device.name, ident)
+            _LOGGER.info(
+                "matter_node_tools device scan: name=%r identifiers=%s",
+                device.name,
+                list(device.identifiers),
+            )
 
         # Devices are registered by the official HA Matter integration under domain "matter".
         # Try multiple known identifier formats across HA versions.
