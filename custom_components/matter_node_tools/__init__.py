@@ -274,27 +274,38 @@ def _register_websocket_api(hass: HomeAssistant) -> None:
         dev_reg = dr.async_get(hass)
 
         result = {}
-        # Devices are registered by the official HA Matter integration under domain "matter".
-        # Identifiers look like ("matter", "1") or ("matter", "node_1") depending on HA version.
+        # Log all device identifiers for debugging
         for device in dev_reg.devices.values():
             for ident in device.identifiers:
-                if ident[0] == "matter" and len(ident) > 1:
-                    raw = str(ident[1]).strip()
-                    # Strip common prefixes: "node_", "matter_node_"
-                    for prefix in ("matter_node_", "node_"):
-                        if raw.startswith(prefix):
-                            raw = raw[len(prefix):]
-                            break
+                _LOGGER.debug("Device %s identifiers: %s", device.name, ident)
+
+        # Devices are registered by the official HA Matter integration under domain "matter".
+        # Try multiple known identifier formats across HA versions.
+        for device in dev_reg.devices.values():
+            for ident in device.identifiers:
+                if ident[0] != "matter" or len(ident) < 2:
+                    continue
+                raw = str(ident[1]).strip()
+                # Strip common prefixes: "node_", "matter_node_", "deviceid_"
+                for prefix in ("matter_node_", "node_", "deviceid_"):
+                    if raw.startswith(prefix):
+                        raw = raw[len(prefix):]
+                        break
+                # Also try splitting on underscore and taking first part
+                candidate = raw.split("_")[0] if "_" in raw else raw
+                for val in (raw, candidate):
                     try:
-                        node_id = int(raw)
+                        node_id = int(val)
                         result[node_id] = {
                             "name": device.name_by_user or device.name or f"Node {node_id}",
                             "manufacturer": device.manufacturer,
                             "model": device.model,
                         }
+                        break
                     except (ValueError, TypeError):
                         pass
 
+        _LOGGER.debug("ws_get_ha_devices result: %s", result)
         connection.send_result(msg["id"], {"devices": result})
 
     websocket_api.async_register_command(hass, ws_get_nodes)
